@@ -17,6 +17,9 @@ import json
 import re
 from fpdf import FPDF
 import base64
+from docx import Document
+import io
+
 
 # --- ページ設定 ---
 st.set_page_config(page_title="Quick BDD Analyzer", layout="wide")
@@ -42,6 +45,19 @@ class BDD_PDF(FPDF):
         self.set_font('Helvetica', 'B', 15)
         self.cell(0, 10, 'Strategic BDD Report', 0, 1, 'C')
         self.ln(10)
+
+# --- Word生成用の関数 ---
+def create_word(target, description, report_text):
+    doc = Document()
+    doc.add_heading('Strategic BDD Report', 0)
+    doc.add_heading(f'Target Analysis: {target}', level=1)
+    doc.add_paragraph(f"Description: {description}")
+    doc.add_heading('Analysis Results', level=1)
+    doc.add_paragraph(report_text)
+    
+    bio = io.BytesIO()
+    doc.save(bio)
+    return bio.getvalue()        
 
 def create_pdf(target, description, report_text):
     pdf = BDD_PDF()
@@ -125,11 +141,36 @@ if st.button("Deep Analysis 開始"):
 
     ※プロフェッショナルな論調で、投資委員会に提出するレベルの具体的数値に基づいた示唆を出してください。
     """
+           with st.spinner("📝 戦略レポートを生成中..."):
+            # ...（レポート生成ロジックはそのまま）...
             report = model.generate_content(report_prompt)
+            report_content = report.text
+            
             st.markdown("---")
             st.markdown("## 📘 Strategic BDD Report")
-            st.markdown(report.text)
+            st.markdown(report_content)
 
-            # PDFダウンロードボタン
-            pdf_data = create_pdf(target_name, data['description'], report_content)
-            st.download_button(label="📥 PDFレポートをダウンロード", data=pdf_data, file_name=f"BDD_Report_{target_name}.pdf", mime="application/pdf")
+            # --- 出力選択セクション ---
+            st.subheader("📥 レポートをダウンロード")
+            col_pdf, col_word = st.columns(2)
+
+            with col_pdf:
+                try:
+                    pdf_data = create_pdf(target_name, data['description'], report_content)
+                    st.download_button(
+                        label="📄 PDF形式で保存",
+                        data=pdf_data,
+                        file_name=f"BDD_Report_{target_name}.pdf",
+                        mime="application/pdf"
+                    )
+                except:
+                    st.error("PDF生成に失敗しました")
+
+            with col_word:
+                word_data = create_word(target_name, data['description'], report_content)
+                st.download_button(
+                    label="📝 Word形式で保存",
+                    data=word_data,
+                    file_name=f"BDD_Report_{target_name}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
