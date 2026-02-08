@@ -71,9 +71,9 @@ def create_pdf(target, description, report_text):
     return pdf.output()
 
 # --- メインロジック ---
-target_name = st.text_input("分析対象を入力（例：岐阜タンメン）", "")
+target_name = st.text_input("分析したい企業の名前を入力してください", "")
 
-if st.button("Deep Analysis 開始"):
+if st.button("分析開始"):
     if not api_key:
         st.error("APIキーを入力してください")
     elif target_name:
@@ -113,47 +113,47 @@ if st.button("Deep Analysis 開始"):
         with st.spinner("📝 戦略コンサル視点での提言を生成中..."):
             table_str = df.to_markdown()
             report_prompt = f"""
-    あなたはゴールドマンサックス（IB）のシニアアナリストです。
-    以下の最新財務比較データに基づき、「{target_name}」に関連する市場環境と競合他社の分析レポートを作成してください。
-
-    【比較対象データ】
-    {table_str}
-
-    【レポート構成】
-    1. エグゼクティブ・サマリー：
-       業界全体のファンダメンタルズ/競合優位性/ {target_name}の現状および強みを踏まえた成長戦略。
-       1-1.事業戦略
-       1-2.人事戦略
-       1-3.財務戦略
-    2. 市場構造と成長ドライバー（Market Dynamics）:
-       2-1.業界のKFS（重要成功要因）と、現在および将来のマクロ環境が与えるインパクト。
-       2-2.足元成長を後押ししているトレンド/成長率の高いセグメント（顧客層/価格帯など）
-       2-3.マルチプル（PER等）の観点から見た、業界のバリュエーション水準。
-    3. 稼ぐ力と資本効率の定量的比較：
-       3-1.営業利益率とROEの相関から見る、競合各社の「参入障壁」と「経営効率」の差を生む構造的要因（コスト構造、アセットライトモデル等）の解剖
-       3-2.競合各社の財務数値から透けて見える「各社の勝ちパターン/強み」の特定
-    4. {target_name}（非上場）への戦略的提言：
-       4-1.マーケットと競合、  {target_name}の公開データから取りうる戦略オプションの洗い出し
-       4-2.数年で2-3倍の収益を目指す目線での仮評価
-       　　現状のバリュエーション水準に基づき、どのようなレバー（出店加速、単価アップ等）を引けば企業価値が最大化するか。
-    5. 事業推進上の致命的リスク（Red Flags）:
-       BDDの観点から、将来の成長を阻害する可能性のある構造的リスク。
-
-    ※プロフェッショナルな論調で、投資委員会に提出するレベルの具体的数値に基づいた示唆を出してください。
-    """
-           with st.spinner("📝 戦略レポートを生成中..."):
-            # ...（レポート生成ロジックはそのまま）...
+            あなたはゴールドマンサックス（IB）のシニアアナリストです。
+            以下の最新財務比較データに基づき、「{target_name}」に関連する市場環境と競合他社の分析レポートを作成してください。
+        
+            【比較対象データ】
+            {table_str}
+        
+            【レポート構成】
+            1. エグゼクティブ・サマリー：
+               業界全体のファンダメンタルズ/競合優位性/ {target_name}の現状および強みを踏まえた成長戦略。
+               1-1.事業戦略
+               1-2.人事戦略
+               1-3.財務戦略
+            2. 市場構造と成長ドライバー:
+               2-1.業界のKFSと現在および将来のマクロ環境が与えるインパクト
+               2-2.足元成長を後押ししているトレンド/成長率の高いセグメント（顧客層/価格帯など）
+               2-3.マルチプル（PER等）の観点から見た、業界のバリュエーション水準。
+            3. 稼ぐ力と資本効率の定量的比較：
+               3-1.営業利益率とROEの相関から見る、競合各社の「参入障壁」と「経営効率」の差を生む構造的要因（コスト構造、アセットライトモデル等）の解剖
+               3-2.競合各社の財務数値から透けて見える「各社の勝ちパターン/強み」の特定
+            4. {target_name}（非上場）への戦略的提言：
+               4-1.マーケットと競合、  {target_name}の公開データから取りうる戦略オプションの洗い出し
+               4-2.数年で2-3倍の収益を目指す目線での仮評価
+               　　現状のバリュエーション水準に基づき、どのようなレバー（出店加速、単価アップ等）を引けば企業価値が最大化するか。
+            5. 事業推進上の致命的リスク（Red Flags）:
+               BDDの観点から、将来の成長を阻害する可能性のある構造的リスク。
+        
+            プロフェッショナルな論調で、具体的数値に基づいた示唆を出してください。
+            """
+                    
             report = model.generate_content(report_prompt)
             report_content = report.text
-            
+        
             st.markdown("---")
             st.markdown("## 📘 Strategic BDD Report")
             st.markdown(report_content)
-
+        
             # --- 出力選択セクション ---
+            st.markdown("---")
             st.subheader("📥 レポートをダウンロード")
             col_pdf, col_word = st.columns(2)
-
+        
             with col_pdf:
                 try:
                     pdf_data = create_pdf(target_name, data['description'], report_content)
@@ -161,16 +161,21 @@ if st.button("Deep Analysis 開始"):
                         label="📄 PDF形式で保存",
                         data=pdf_data,
                         file_name=f"BDD_Report_{target_name}.pdf",
-                        mime="application/pdf"
+                        mime="application/pdf",
+                        key="pdf_download"
                     )
-                except:
-                    st.error("PDF生成に失敗しました")
-
+                except Exception as e:
+                    st.error(f"PDF生成に失敗しました: {e}")
+        
             with col_word:
-                word_data = create_word(target_name, data['description'], report_content)
-                st.download_button(
-                    label="📝 Word形式で保存",
-                    data=word_data,
-                    file_name=f"BDD_Report_{target_name}.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
+                try:
+                    word_data = create_word(target_name, data['description'], report_content)
+                    st.download_button(
+                        label="📝 Word形式で保存",
+                        data=word_data,
+                        file_name=f"BDD_Report_{target_name}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key="word_download"
+                    )
+                except Exception as e:
+                    st.error(f"Word生成に失敗しました: {e}")
