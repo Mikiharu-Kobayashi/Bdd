@@ -104,8 +104,10 @@ if st.button("分析開始"):
                 except: continue
             st.subheader("📊 競合の主要財務数値")
             df = pd.DataFrame(summary_results)
-            st.dataframe(df.style.format(precision=1).background_gradient(cmap='Blues'))
-
+            st.dataframe(
+                df.style.format(precision=1),
+                use_container_width=True     
+            )
         # 3. ビジュアル化
         fig = px.scatter(df, x="営業利益率(%)", y="ROE(%)", size="時価総額(億)", color="企業名", text="企業名", template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
@@ -116,6 +118,7 @@ if st.button("分析開始"):
             report_prompt = f"""
             ゴールドマンサックス（IB）のシニアアナリストになったつもりで
             以下の最新財務比較データに基づき、「{target_name}」に関連する市場環境と競合他社の分析レポートを作成してください。
+            アウトプットはレポート名から簡潔に始めてください。ゴールドマンサックスやシニアアナリストなどは表示しないでください。
             【比較対象データ】
             {table_str}
         
@@ -146,7 +149,7 @@ if st.button("分析開始"):
             report_content = report.text
         
             st.markdown("---")
-            st.markdown("## 📘 対象企業・業界に対する初期仮設")
+            st.markdown("## 📘 対象企業・業界に対する初期仮説")
             st.markdown(report_content)
         
             # --- 出力選択セクション ---
