@@ -1,0 +1,7 @@
+streamlit
+google-generativeai
+yfinance
+pandas
+plotly
+tabulate
+fpdf2
