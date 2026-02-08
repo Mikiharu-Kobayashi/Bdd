@@ -143,6 +143,11 @@ if st.button("分析開始"):
             【比較対象データ】
             {table_str}
         
+            【読みやすさの厳格ルール】
+            1. 構造化：## で章を、### で節を区切り、情報の階層を明確にすること。
+            2. 視覚化：重要な数値や結論は **太字** で強調し、3つ以上の項目は必ず箇条書きにすること。
+            3. 簡潔性：1文を短くし、専門用語には平易な注釈を添えること。
+            4. 要約：各章の冒頭に「> 結論：(一行要約)」を記述すること。
             【レポート構成】
             1. エグゼクティブ・サマリー：
                業界全体のファンダメンタルズ/競合優位性/ {target_name}の現状および強みを踏まえた成長戦略。
@@ -173,9 +178,10 @@ if st.button("分析開始"):
             st.markdown("## 対象企業・業界に対する初期仮説")
             st.markdown(report_content)
         
-            # --- 出力選択セクション ---
+            # --- 出力セクション ---
             st.markdown("---")
-               
+            col_word = st.columns(2)
+            
             with col_word:
                 try:
                     word_data = create_word(target_name, data['description'], report_content)
