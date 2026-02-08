@@ -95,6 +95,7 @@ if st.button("Deep Analysis 開始"):
 
         # 4. BDDレポート生成
         with st.spinner("📝 戦略コンサル視点での提言を生成中..."):
+            table_str = df.to_markdown()
             report_prompt = f"""
     あなたはゴールドマンサックス（IB）のシニアアナリストです。
     以下の最新財務比較データに基づき、「{target_name}」に関連する市場環境と競合他社の分析レポートを作成してください。
