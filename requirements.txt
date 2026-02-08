@@ -4,5 +4,5 @@ yfinance
 pandas
 plotly
 tabulate
-
 fpdf2
+matplotlib
