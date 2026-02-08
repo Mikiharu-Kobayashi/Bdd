@@ -180,17 +180,15 @@ if st.button("分析開始"):
         
             # --- 出力セクション ---
             st.markdown("---")
-            col_word = st.columns(2)
-            
-            with col_word:
-                try:
-                    word_data = create_word(target_name, data['description'], report_content)
-                    st.download_button(
-                        label="📝 Word形式で保存",
-                        data=word_data,
-                        file_name=f"BDD_Report_{target_name}.docx",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                        key="word_download"
-                    )
-                except Exception as e:
-                    st.error(f"Word生成に失敗しました: {e}")
+              
+            try:
+                word_data = create_word(target_name, data['description'], report_content)
+                st.download_button(
+                    label="📝 Word形式で保存",
+                    data=word_data,
+                    file_name=f"Quick BDD_Report_{target_name}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="word_download"
+                )
+            except Exception as e:
+                st.error(f"Word生成に失敗しました: {e}")
