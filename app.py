@@ -84,7 +84,7 @@ if st.button("分析開始"):
             comp_prompt = f"「{target_name}」のBDDを行います。事業概要と上場競合5社の銘柄コード(.T)をJSON形式のみで出力： {{'description': '...', 'competitors': [{{'name': '...', 'ticker': '...'}}]}}"
             res = model.generate_content(comp_prompt)
             data = json.loads(re.search(r'\{.*\}', res.text, re.DOTALL).group())
-            st.subheader(f"✅ 対象企業の定義: {target_name}")
+            st.subheader(f"✅ 対象企業の概要: {target_name}")
             st.info(data['description'])
 
         # 2. 財務データ取得
