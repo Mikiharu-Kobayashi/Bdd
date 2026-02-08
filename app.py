@@ -102,6 +102,7 @@ if st.button("分析開始"):
                         "ROE(%)": round(info.get('returnOnEquity', 0) * 100, 1)
                     })
                 except: continue
+            st.subheader("📊 競合の主要財務数値")
             df = pd.DataFrame(summary_results)
             st.dataframe(df.style.format(precision=1).background_gradient(cmap='Blues'))
 
