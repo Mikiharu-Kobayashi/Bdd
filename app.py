@@ -110,7 +110,7 @@ if st.button("分析開始"):
             )
         # 3. ビジュアル化
         st.subheader("競合ポジショニングマップ")
-      　plot_df = df.copy()
+        plot_df = df.copy()
         plot_df["表示サイズ"] = plot_df["時価総額(億)"].apply(lambda x: 0.1 if x <= 0 else x)
 
         fig = px.scatter(
