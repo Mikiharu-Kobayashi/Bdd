@@ -6,3 +6,4 @@ plotly
 tabulate
 fpdf2
 matplotlib
+python-docx
