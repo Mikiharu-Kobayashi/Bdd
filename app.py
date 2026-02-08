@@ -23,7 +23,7 @@ import io
 
 # --- ページ設定 ---
 st.set_page_config(page_title="Quick BDD Analyzer", layout="wide")
-st.title("📈 Quick Business Due Diligence Analyzer")
+st.title("Quick Business Due Diligence Analyzer")
 
 # --- サイドバー：APIキー設定 ---
 with st.sidebar:
@@ -84,7 +84,7 @@ if st.button("分析開始"):
             comp_prompt = f"「{target_name}」のBDDを行います。事業概要と上場競合5社の銘柄コード(.T)をJSON形式のみで出力： {{'description': '...', 'competitors': [{{'name': '...', 'ticker': '...'}}]}}"
             res = model.generate_content(comp_prompt)
             data = json.loads(re.search(r'\{.*\}', res.text, re.DOTALL).group())
-            st.subheader(f"✅ 対象企業の概要: {target_name}")
+            st.subheader(f"対象企業の概要: {target_name}")
             st.info(data['description'])
 
         # 2. 財務データ取得
@@ -102,16 +102,37 @@ if st.button("分析開始"):
                         "ROE(%)": round(info.get('returnOnEquity', 0) * 100, 1)
                     })
                 except: continue
-            st.subheader("📊 競合の主要財務数値")
+            st.subheader("競合の主要財務数値")
             df = pd.DataFrame(summary_results)
             st.dataframe(
                 df.style.format(precision=1),
                 use_container_width=True     
             )
         # 3. ビジュアル化
-        fig = px.scatter(df, x="営業利益率(%)", y="ROE(%)", size="時価総額(億)", color="企業名", text="企業名", template="plotly_white")
-        st.plotly_chart(fig, use_container_width=True)
+        st.subheader("競合ポジショニングマップ")
+      　plot_df = df.copy()
+        plot_df["表示サイズ"] = plot_df["時価総額(億)"].apply(lambda x: 0.1 if x <= 0 else x)
 
+        fig = px.scatter(
+            plot_df, 
+            x="営業利益率(%)", 
+            y="ROE(%)", 
+            size="表示サイズ",  # 修正したカラムを使用
+            color="企業名", 
+            text="企業名", 
+            template="plotly_white",
+            labels={"表示サイズ": "時価総額(億)"} # 凡例の表示だけ元の名前に
+        )
+        
+        # デザイン調整：背景を透過っぽく、グリッドを薄く
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color="white")
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+       
         # 4. BDDレポート生成
         with st.spinner("📝 戦略コンサル視点での提言を生成中..."):
             table_str = df.to_markdown()
@@ -149,7 +170,7 @@ if st.button("分析開始"):
             report_content = report.text
         
             st.markdown("---")
-            st.markdown("## 📘 対象企業・業界に対する初期仮説")
+            st.markdown("## 対象企業・業界に対する初期仮説")
             st.markdown(report_content)
         
             # --- 出力選択セクション ---
