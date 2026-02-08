@@ -114,9 +114,8 @@ if st.button("分析開始"):
         with st.spinner("📝 戦略コンサル視点での提言を生成中..."):
             table_str = df.to_markdown()
             report_prompt = f"""
-            あなたはゴールドマンサックス（IB）のシニアアナリストです。
+            ゴールドマンサックス（IB）のシニアアナリストになったつもりで
             以下の最新財務比較データに基づき、「{target_name}」に関連する市場環境と競合他社の分析レポートを作成してください。
-        
             【比較対象データ】
             {table_str}
         
@@ -147,27 +146,12 @@ if st.button("分析開始"):
             report_content = report.text
         
             st.markdown("---")
-            st.markdown("## 📘 Strategic BDD Report")
+            st.markdown("## 📘 対象企業・業界に対する初期仮設")
             st.markdown(report_content)
         
             # --- 出力選択セクション ---
             st.markdown("---")
-            st.subheader("📥 レポートをダウンロード")
-            col_pdf, col_word = st.columns(2)
-        
-            with col_pdf:
-                try:
-                    pdf_data = create_pdf(target_name, data['description'], report_content)
-                    st.download_button(
-                        label="📄 PDF形式で保存",
-                        data=pdf_data,
-                        file_name=f"BDD_Report_{target_name}.pdf",
-                        mime="application/pdf",
-                        key="pdf_download"
-                    )
-                except Exception as e:
-                    st.error(f"PDF生成に失敗しました: {e}")
-        
+               
             with col_word:
                 try:
                     word_data = create_word(target_name, data['description'], report_content)
