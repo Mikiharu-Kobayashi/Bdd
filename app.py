@@ -124,7 +124,9 @@ if "step" in st.session_state and st.session_state.step >= 2:
         if not final_competitors:
             st.error("少なくとも1社は選択してください。")
         else:
-            model = genai.GenerativeModel(selected_model)for comp in comp_list:
+            model = genai.GenerativeModel(selected_model)
+            
+            for comp in comp_list:
         is_selected = st.checkbox(
             f"**{comp['name']}** ({comp['ticker']}) — {comp['reason']}", 
             value=True, 
