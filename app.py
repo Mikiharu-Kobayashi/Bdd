@@ -58,13 +58,18 @@ def create_word(target, description, report_text):
 
 # --- メインロジック ---
 target_name = st.text_input("分析したい企業の名前を入力してください", "")
-# --- 1. 競合特定フェーズ ---        
-if st.button("分析開始"):
+# --- 1. 競合特定フェーズ ---
+with st.form(key='search_form'):
+    target_name = st.text_input("分析したい企業の名前を入力してください（Enterで確定）", "")
+    submit_button = st.form_submit_button(label='分析開始')
+
+# ボタンが押されるか、Enterが叩かれた時の処理
+if submit_button:
     if not api_key:
         st.error("左上の矢印 >> からサイドバーを開き、APIキーを入力してください")
     elif target_name:
         model = genai.GenerativeModel(selected_model)
-        with st.spinner("🔍 市場構造と競合候補を調査中..."):
+        with st.spinner(f"🔍 {target_name} の市場構造と競合候補を調査中..."):
             comp_prompt = f"""
             「{target_name}」のBDDを行います。以下をJSON形式のみで出力してください。
             {{
@@ -74,14 +79,17 @@ if st.button("分析開始"):
               ]
             }}
             """
-            res = model.generate_content(comp_prompt)
-            data = json.loads(re.search(r'\{.*\}', res.text, re.DOTALL).group())
-            
-            # セッションに保存
-            st.session_state.target_desc = data['description']
-            st.session_state.all_competitors = data['competitors']
-            st.session_state.step = 2
-
+            try:
+                res = model.generate_content(comp_prompt)
+                data = json.loads(re.search(r'\{.*\}', res.text, re.DOTALL).group())
+                
+                # セッションに保存
+                st.session_state.target_desc = data['description']
+                st.session_state.all_competitors = data['competitors']
+                st.session_state.step = 2
+                # フォーム送信後は自動で再描画されるため、入力内容が確定します
+            except Exception as e:
+                st.error(f"AIによる調査でエラーが発生しました: {e}")
 # --- 2. 競合選択 & 財務分析フェーズ ---
 if "step" in st.session_state and st.session_state.step >= 2:
     st.subheader(f"対象企業の概要: {target_name}")
@@ -129,11 +137,11 @@ if "step" in st.session_state and st.session_state.step >= 2:
                     st.error("財務データの取得に失敗しました。")
                 else:
                     df = pd.DataFrame(summary_results)
-                    st.subheader("📊 競合の主要財務数値")
+                    st.subheader("競合の主要財務数値")
                     st.dataframe(df.style.format(precision=1), use_container_width=True)
             
                     # 3. ビジュアル化
-                    st.subheader("📈 競合ポジショニングマップ")
+                    st.subheader("競合ポジショニングマップ")
                     plot_df = df.copy()
                     plot_df["表示サイズ"] = plot_df["時価総額(億)"].apply(lambda x: 0.1 if x <= 0 else x)
             
@@ -201,7 +209,7 @@ if "step" in st.session_state and st.session_state.step >= 2:
                         try:
                             word_data = create_word(target_name, data['description'], report_content)
                             st.download_button(
-                                label="📝 Word形式で保存",
+                                label="Word形式で保存",
                                 data=word_data,
                                 file_name=f"Quick BDD_Report_{target_name}.docx",
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
