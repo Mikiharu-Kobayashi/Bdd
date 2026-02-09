@@ -236,33 +236,33 @@ if "step" in st.session_state and st.session_state.step >= 2:
                         プロフェッショナルな論調で、具体的数値に基づいた示唆を出してください。
                         """
                         
+                        try:
+                            # レポート生成実行
+                            report_response = model.generate_content(report_prompt)
+                            report_content = report_response.text
+                            
+                            # 画面にレポートを表示
+                            st.divider()
+                            st.markdown(report_content)
+                            
+                            # --- Word出力セクション ---
+                            st.markdown("---")
                             try:
-                                # レポート生成実行
-                                report_response = model.generate_content(report_prompt)
-                                report_content = report_response.text
+                                # session_state から企業概要を取得
+                                desc_text = st.session_state.get('target_desc', '概要なし')
                                 
-                                # 画面にレポートを表示
-                                st.divider()
-                                st.markdown(report_content)
+                                # Wordファイルの生成
+                                word_data = create_word(target_name, desc_text, report_content)
                                 
-                                # --- Word出力セクション ---
-                                st.markdown("---")
-                                try:
-                                    # session_state から企業概要を取得
-                                    desc_text = st.session_state.get('target_desc', '概要なし')
-                                    
-                                    # Wordファイルの生成
-                                    word_data = create_word(target_name, desc_text, report_content)
-                                    
-                                    st.download_button(
-                                        label="📝 Word形式で保存",
-                                        data=word_data,
-                                        file_name=f"Quick_BDD_Report_{target_name}.docx",
-                                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                        key="word_download"
-                                    )
-                                except Exception as word_err:
-                                    st.error(f"Word生成中にエラーが発生しました: {word_err}")
-                        
-                            except Exception as api_err:
-                                st.error(f"レポート生成中にAIエラーが発生しました: {api_err}")
+                                st.download_button(
+                                    label="📝 Word形式で保存",
+                                    data=word_data,
+                                    file_name=f"Quick_BDD_Report_{target_name}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    key="word_download"
+                                )
+                            except Exception as word_err:
+                                st.error(f"Word生成中にエラーが発生しました: {word_err}")
+                    
+                        except Exception as api_err:
+                            st.error(f"レポート生成中にAIエラーが発生しました: {api_err}")
