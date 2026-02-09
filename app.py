@@ -108,6 +108,7 @@ if "step" in st.session_state and st.session_state.step >= 2:
         if not final_competitors:
             st.error("少なくとも1社は選択してください。")
         else:
+            model = genai.GenerativeModel(selected_model)
             with st.spinner("📡 5年分の詳細財務データを抽出中..."):
                 summary_results = [] # ポジショニングマップ用（最新1年）
                 detailed_financials_for_ai = "" # AIレポート用（5年分）
@@ -180,7 +181,7 @@ if "step" in st.session_state and st.session_state.step >= 2:
                         あなたは、トップティアの戦略コンサルティングファーム出身で、現在は大手PEファンドの投資委員（ICメンバー）です。
                         「{target_name}」のBDD（ビジネス・デューデリジェンス）において、特に「アップサイド・ポテンシャル」と「バリューアップ計画（VCP）」に焦点を当てた投資判断資料を作成してください。
 
-                        与えられた財務データ（{table_str}）を起点に、一般的な市場解説ではなく、「この会社は、具体的にどのレバーを引けば企業価値（EV）が2倍、3倍になるか？」という視点で、ドライかつ論理的に、そして商品名やECサイト名称、組織名などの固有名詞を用いながら対象会社を具体的に記述してください。
+                        与えられた財務データ（{detailed_financials_for_ai}）を起点に、一般的な市場解説ではなく、「この会社は、具体的にどのレバーを引けば企業価値（EV）が2倍、3倍になるか？」という視点で、ドライかつ論理的に、そして商品名やECサイト名称、組織名などの固有名詞を用いながら対象会社を具体的に記述してください。
                         アウトプットはレポート名から簡潔に始めてください。
                         内容を深めるため、BDD/ファンドなどの単語を書いていますがOutputには含めず、対象企業のレポートとして様々な用途に対応できるようにしてください
                         
@@ -234,27 +235,34 @@ if "step" in st.session_state and st.session_state.step >= 2:
                     
                         プロフェッショナルな論調で、具体的数値に基づいた示唆を出してください。
                         """
-                                
-                        report = model.generate_content(report_prompt)
-                        report_content = report.text
-                    
-                        st.markdown("---")
-                        st.markdown(report_content)
-                    
-                        # --- 出力セクション ---
-                        st.markdown("---")
                         
-                        try:
-                            # 修正箇所: data['description'] はここでは使えないため、session_stateから取得
-                            desc_text = st.session_state.target_desc
-                            word_data = create_word(target_name, desc_text, report_content)
-                            
-                            st.download_button(
-                                label="📝 Word形式で保存",
-                                data=word_data,
-                                file_name=f"Quick BDD_Report_{target_name}.docx",
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                key="word_download"
-                            )
-                        except Exception as e:
-                            st.error(f"Word生成に失敗しました: {e}")
+                            try:
+                                # レポート生成実行
+                                report_response = model.generate_content(report_prompt)
+                                report_content = report_response.text
+                                
+                                # 画面にレポートを表示
+                                st.divider()
+                                st.markdown(report_content)
+                                
+                                # --- Word出力セクション ---
+                                st.markdown("---")
+                                try:
+                                    # session_state から企業概要を取得
+                                    desc_text = st.session_state.get('target_desc', '概要なし')
+                                    
+                                    # Wordファイルの生成
+                                    word_data = create_word(target_name, desc_text, report_content)
+                                    
+                                    st.download_button(
+                                        label="📝 Word形式で保存",
+                                        data=word_data,
+                                        file_name=f"Quick_BDD_Report_{target_name}.docx",
+                                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        key="word_download"
+                                    )
+                                except Exception as word_err:
+                                    st.error(f"Word生成中にエラーが発生しました: {word_err}")
+                        
+                            except Exception as api_err:
+                                st.error(f"レポート生成中にAIエラーが発生しました: {api_err}")
