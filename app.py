@@ -135,7 +135,6 @@ if "step" in st.session_state and st.session_state.step >= 2:
                 if is_selected:
                     selected_names.append(comp['name'])
 
-    if st.button("選択した企業で詳細分析・レポート生成"):
         # 選択された企業のみをフィルタリング
         final_competitors = [c for c in comp_list if c['name'] in selected_names]
         
