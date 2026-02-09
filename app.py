@@ -111,7 +111,7 @@ if "step" in st.session_state and st.session_state.step >= 2:
 
     # 選択用データの準備
     comp_list = st.session_state.all_competitors
-    selected_names = []
+    selected_tickers = []
     
     # 競合理由を表示しながらチェックボックスを並べる
     for comp in comp_list:
