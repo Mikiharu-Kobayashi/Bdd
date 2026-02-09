@@ -62,7 +62,7 @@ if submit_button:
         st.error("左上の矢印 >> からサイドバーを開き、APIキーを入力してください")
     elif target_name:
         model = genai.GenerativeModel(selected_model)
-        with st.spinner(f"🔍 {target_name} の市場構造と競合候補を調査中..."):
+        with st.spinner(f"🔍 {target_name} を調査中..."):
             comp_prompt = f"""
             「{target_name}」のBDDを行います。以下をJSON形式のみで出力してください。
             {{
