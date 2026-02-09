@@ -83,13 +83,7 @@ if st.button("分析開始"):
         st.error("APIキーを入力してください")
     elif target_name:
         model = genai.GenerativeModel(selected_model)
-# --- 1. 競合特定フェーズ ---
-if st.button("市場調査を開始"):
-    if not api_key:
-        st.error("APIキーを入力してください")
-    elif target_name:
-        model = genai.GenerativeModel(selected_model)
-        
+# --- 1. 競合特定フェーズ ---        
         with st.spinner("🔍 市場構造と競合候補を調査中..."):
             # プロンプトに 'reason' を追加
             comp_prompt = f"""
