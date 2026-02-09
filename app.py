@@ -84,8 +84,6 @@ if st.button("分析開始"):
     elif target_name:
         model = genai.GenerativeModel(selected_model)
 # --- 1. 競合特定フェーズ ---
-target_name = st.text_input("分析対象を入力（例：岐阜タンメン）", "")
-
 if st.button("市場調査を開始"):
     if not api_key:
         st.error("APIキーを入力してください")
