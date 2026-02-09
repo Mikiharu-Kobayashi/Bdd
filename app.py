@@ -58,7 +58,7 @@ def create_word(target, description, report_text):
 
 # --- 1. 競合特定フェーズ ---
 with st.form(key='search_form'):
-    target_name = st.text_input("分析したい企業の名前を入力してください（Enterで確定）", "")
+    target_name = st.text_input("分析したい企業の名前を入力してください", "")
     submit_button = st.form_submit_button(label='分析開始')
 
 # ボタンが押されるか、Enterが叩かれた時の処理
