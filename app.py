@@ -56,8 +56,6 @@ def create_word(target, description, report_text):
     doc.save(bio)
     return bio.getvalue()        
 
-# --- メインロジック ---
-target_name = st.text_input("分析したい企業の名前を入力してください", "")
 # --- 1. 競合特定フェーズ ---
 with st.form(key='search_form'):
     target_name = st.text_input("分析したい企業の名前を入力してください（Enterで確定）", "")
