@@ -15,7 +15,7 @@ import io
 
 # --- ページ設定 ---
 st.set_page_config(page_title="Quick BDD Analyzer", layout="wide")
-st.title("Quick BDD（単一事業/上場企業参照）")
+st.title("Quick BDD（単一事業）")
 
 # --- サイドバー：APIキー設定 ---
 with st.sidebar:
