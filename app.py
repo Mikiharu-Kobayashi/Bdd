@@ -127,13 +127,13 @@ if "step" in st.session_state and st.session_state.step >= 2:
             model = genai.GenerativeModel(selected_model)
             
             for comp in comp_list:
-        is_selected = st.checkbox(
-            f"**{comp['name']}** ({comp['ticker']}) — {comp['reason']}", 
-            value=True, 
-            key=comp['ticker']
-        )
-        if is_selected:
-            selected_names.append(comp['name'])
+                is_selected = st.checkbox(
+                    f"**{comp['name']}** ({comp['ticker']}) — {comp['reason']}", 
+                    value=True, 
+                    key=comp['ticker']
+                )
+                if is_selected:
+                    selected_names.append(comp['name'])
 
     if st.button("選択した企業で詳細分析・レポート生成"):
         # 選択された企業のみをフィルタリング
