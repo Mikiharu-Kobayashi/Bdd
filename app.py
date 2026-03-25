@@ -114,7 +114,7 @@ if "step" in st.session_state and st.session_state.step >= 2:
                 detailed_financials_for_ai = "" # AIレポート用（5年分）
                 error_targets = []
                 
-               for comp in final_competitors:
+                for comp in final_competitors:
                     try:
                         # 💡 改善点1: ティッカーコードのクレンジング（余計な空白削除や .T の補完）
                         raw_ticker = str(comp['ticker']).strip()
