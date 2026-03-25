@@ -114,12 +114,24 @@ if "step" in st.session_state and st.session_state.step >= 2:
                 detailed_financials_for_ai = "" # AIレポート用（5年分）
                 error_targets = []
                 
-                for comp in final_competitors:
+   for comp in final_competitors:
                     try:
-                        stock = yf.Ticker(comp['ticker'])
+                        # 💡 改善点1: ティッカーコードのクレンジング（余計な空白削除や .T の補完）
+                        raw_ticker = str(comp['ticker']).strip()
+                        if re.match(r'^\d{4}$', raw_ticker):  # 4桁の数字だけなら .T をつける
+                            ticker_code = f"{raw_ticker}.T"
+                        else:
+                            ticker_code = raw_ticker
+
+                        stock = yf.Ticker(ticker_code)
                         
                         # 1. 最新データの取得（ポジショニングマップ用）
                         info = stock.info
+                        
+                        # infoが空っぽ（取得失敗）の場合はエラーを起こしてexceptに飛ばす
+                        if not info:
+                            raise ValueError(f"Yahoo Financeから {ticker_code} の情報が取得できませんでした")
+
                         val_market_cap = info.get('marketCap')
                         val_op_margin = info.get('operatingMargins')
                         val_roe = info.get('returnOnEquity')
@@ -134,24 +146,33 @@ if "step" in st.session_state and st.session_state.step >= 2:
                         })
 
                         # 2. 5年分（ヒストリカル）データの取得（AI分析用）
-                        # financials: PL, balance_sheet: BS
-                        hist_pl = stock.financials # 損益計算書
-                        hist_bs = stock.balance_sheet # 貸借対照表
+                        hist_pl = stock.financials 
+                        hist_bs = stock.balance_sheet 
                         
-                        # AIが読みやすいようにテキスト化
-                        detailed_financials_for_ai += f"\n--- {comp['name']} ({comp['ticker']}) 過去5年分財務データ ---\n"
+                        detailed_financials_for_ai += f"\n--- {comp['name']} ({ticker_code}) 過去5年分財務データ ---\n"
                         detailed_financials_for_ai += "【損益計算書 (主要項目)】\n"
-                        detailed_financials_for_ai += hist_pl.loc[hist_pl.index.intersection(['Total Revenue', 'Operating Income', 'Net Income', 'Selling General Administrative'])].to_string()
+                        
+                        # 💡 改善点2: データが空の場合の安全対策
+                        if not hist_pl.empty:
+                            detailed_financials_for_ai += hist_pl.loc[hist_pl.index.intersection(['Total Revenue', 'Operating Income', 'Net Income', 'Selling General Administrative'])].to_string()
+                        else:
+                            detailed_financials_for_ai += "データなし\n"
+
                         detailed_financials_for_ai += "\n【貸借対照表 (主要項目)】\n"
-                        detailed_financials_for_ai += hist_bs.loc[hist_bs.index.intersection(['Total Assets', 'Stockholders Equity', 'Inventory', 'Accounts Receivable', 'Accounts Payable'])].to_string()
+                        if not hist_bs.empty:
+                            detailed_financials_for_ai += hist_bs.loc[hist_bs.index.intersection(['Total Assets', 'Stockholders Equity', 'Inventory', 'Accounts Receivable', 'Accounts Payable'])].to_string()
+                        else:
+                            detailed_financials_for_ai += "データなし\n"
                         detailed_financials_for_ai += "\n"
 
                     except Exception as e:
-                        error_targets.append(comp['name'])
+                        # 💡 改善点3: どんなエラーが出たかを記録する
+                        error_targets.append(f"{comp['name']} ({comp['ticker']}) - 詳細: {str(e)}")
                         continue
                 
                 if error_targets:
-                    st.warning(f"一部のデータ取得に制限がありました: {', '.join(error_targets)}")
+                    # エラーの具体的な中身を画面に警告として出す
+                    st.warning("一部のデータ取得に制限がありました:\n\n" + "\n\n".join(error_targets))
 
                 if not summary_results:
                     st.error("財務データの取得に失敗しました。")
