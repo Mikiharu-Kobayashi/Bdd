@@ -1,29 +1,24 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import google.generativeai as genai
-import yfinance as yf
 import pandas as pd
 import plotly.express as px
 import json
 import re
+import requests
 from docx import Document
 import io
+import time
 
 # --- ページ設定 ---
 st.set_page_config(page_title="Quick BDD Analyzer", layout="wide")
-st.title("Quick BDD（単一事業向け）")
+st.title("Quick BDD（単一事業向け - FMP API版）")
 
 # --- サイドバー：APIキー設定 ---
 with st.sidebar:
     st.header("Settings")
     
-    st.markdown("### API Key Setup")
-    st.markdown("""
-    1. [Google AI Studio](https://aistudio.google.com/app/apikey) にアクセス
-    2. Create API key をクリック
-    3. キーをコピーして以下に貼り付けてください
-    """)
-    
+    st.markdown("### 1. Gemini API Key")
     api_key = st.text_input("Enter Gemini API Key", type="password")
     
     if api_key:
@@ -38,6 +33,10 @@ with st.sidebar:
     else:
         st.info("APIキーを入力すると分析が開始できます")
 
+    st.markdown("### 2. FMP API Key")
+    st.markdown("[FMP公式サイト](https://site.financialmodelingprep.com/developer/docs/dashboard)から取得した無料APIキーを入力してください")
+    fmp_api_key = st.text_input("Enter FMP API Key", type="password")
+
 # --- Word生成用の関数 ---
 def create_word(target, description, report_text):
     doc = Document()
@@ -49,18 +48,89 @@ def create_word(target, description, report_text):
     
     bio = io.BytesIO()
     doc.save(bio)
-    return bio.getvalue()        
+    return bio.getvalue()
+
+# --- FMP APIから財務データを取得する関数（キャッシュ付き） ---
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_fmp_financials(ticker_code, fmp_key):
+    # FMPの制限対策（念のため少し待機）
+    time.sleep(0.5)
+    
+    # 4桁の数字のみの場合は、日本株指定のために.Tを付与する
+    raw_ticker = str(ticker_code).strip()
+    if re.match(r'^\d{4}$', raw_ticker):
+        ticker = f"{raw_ticker}.T"
+    else:
+        ticker = raw_ticker
+
+    base_url = "https://financialmodelingprep.com/api/v3"
+    params = {"apikey": fmp_key}
+    
+    try:
+        # 1. クォート情報（時価総額など）
+        quote_res = requests.get(f"{base_url}/quote/{ticker}", params=params).json()
+        # 2. 損益計算書（過去5年分）
+        is_res = requests.get(f"{base_url}/income-statement/{ticker}", params={"limit": 5, "apikey": fmp_key}).json()
+        # 3. 貸借対照表（過去5年分）
+        bs_res = requests.get(f"{base_url}/balance-sheet-statement/{ticker}", params={"limit": 5, "apikey": fmp_key}).json()
+        # 4. 主要指標（直近のROEなど）
+        metrics_res = requests.get(f"{base_url}/key-metrics-ttm/{ticker}", params=params).json()
+
+        if not quote_res or not is_res:
+            raise ValueError(f"FMP APIから {ticker} の情報が取得できませんでした。ティッカーコードが正しいか確認してください。")
+
+        latest_is = is_res[0]
+        quote = quote_res[0]
+        metrics = metrics_res[0] if metrics_res else {}
+
+        val_market_cap = quote.get('marketCap', 0)
+        val_revenue = latest_is.get('revenue', 0)
+        val_op_income = latest_is.get('operatingIncome', 0)
+        val_roe = metrics.get('roeTTM', 0)
+
+        # ポジショニングマップ用の最新サマリー
+        summary = {
+            "時価総額(億)": round(val_market_cap / 1e8, 1) if val_market_cap else 0,
+            "売上高(億)": round(val_revenue / 1e8, 1) if val_revenue else 0,
+            "営業利益率(%)": round((val_op_income / val_revenue) * 100, 1) if val_revenue and val_revenue != 0 else 0,
+            "ROE(%)": round(val_roe * 100, 1) if val_roe else 0
+        }
+
+        # AI分析用の5年分ヒストリカルデータ整形
+        df_is = pd.DataFrame(is_res)
+        df_bs = pd.DataFrame(bs_res)
+
+        hist_text = "【損益計算書 (主要項目)】\n"
+        if not df_is.empty:
+            is_cols = [c for c in ['date', 'revenue', 'operatingIncome', 'netIncome', 'sellingGeneralAndAdministrativeExpenses'] if c in df_is.columns]
+            hist_text += df_is[is_cols].to_string(index=False) + "\n"
+        else:
+            hist_text += "データなし\n"
+
+        hist_text += "\n【貸借対照表 (主要項目)】\n"
+        if not df_bs.empty:
+            bs_cols = [c for c in ['date', 'totalAssets', 'totalStockholdersEquity', 'inventory', 'accountReceivables', 'accountPayables'] if c in df_bs.columns]
+            hist_text += df_bs[bs_cols].to_string(index=False) + "\n"
+        else:
+            hist_text += "データなし\n"
+
+        return summary, hist_text
+
+    except Exception as e:
+        raise ValueError(f"データ取得エラー ({ticker}): {str(e)}")
+
 
 # --- 1. 競合特定フェーズ ---
 with st.form(key='search_form'):
     target_name = st.text_input("分析したい企業の名前を入力してください", "")
     submit_button = st.form_submit_button(label='分析開始')
 
-# ボタンが押されるか、Enterが叩かれた時の処理
 if submit_button:
     if not api_key:
-        st.error("左上の矢印 >> からサイドバーを開き、APIキーを入力してください")
-    elif target_name:
+        st.error("左上の矢印 >> からサイドバーを開き、Gemini APIキーを入力してください")
+    elif not target_name:
+        st.warning("企業名を入力してください")
+    else:
         model = genai.GenerativeModel(selected_model)
         with st.spinner(f"🔍 {target_name} を調査中..."):
             comp_prompt = f"""
@@ -74,11 +144,9 @@ if submit_button:
             """
             try:
                 res = model.generate_content(comp_prompt)
-                # JSON抽出の強化（余計な文字が含まれていても抽出できるように）
                 match = re.search(r'\{.*\}', res.text, re.DOTALL)
                 if match:
                     data = json.loads(match.group())
-                    # セッションに保存
                     st.session_state.target_desc = data['description']
                     st.session_state.all_competitors = data['competitors']
                     st.session_state.step = 2
@@ -107,71 +175,32 @@ if "step" in st.session_state and st.session_state.step >= 2:
         
         if not final_competitors:
             st.error("少なくとも1社は選択してください。")
+        elif not fmp_api_key:
+            st.error("左上の矢印 >> からサイドバーを開き、FMP APIキーを入力してください")
         else:
             model = genai.GenerativeModel(selected_model)
-            with st.spinner("📡 5年分の詳細財務データを抽出中..."):
-                summary_results = [] # ポジショニングマップ用（最新1年）
-                detailed_financials_for_ai = "" # AIレポート用（5年分）
+            with st.spinner("📡 FMP APIから5年分の詳細財務データを抽出中..."):
+                summary_results = []
+                detailed_financials_for_ai = ""
                 error_targets = []
                 
                 for comp in final_competitors:
                     try:
-                        # 💡 改善点1: ティッカーコードのクレンジング（余計な空白削除や .T の補完）
-                        raw_ticker = str(comp['ticker']).strip()
-                        if re.match(r'^\d{4}$', raw_ticker):  # 4桁の数字だけなら .T をつける
-                            ticker_code = f"{raw_ticker}.T"
-                        else:
-                            ticker_code = raw_ticker
-
-                        stock = yf.Ticker(ticker_code)
+                        # FMP関数呼び出し
+                        summary, hist_text = fetch_fmp_financials(comp['ticker'], fmp_api_key)
                         
-                        # 1. 最新データの取得（ポジショニングマップ用）
-                        info = stock.info
-                        
-                        # infoが空っぽ（取得失敗）の場合はエラーを起こしてexceptに飛ばす
-                        if not info:
-                            raise ValueError(f"Yahoo Financeから {ticker_code} の情報が取得できませんでした")
+                        summary["企業名"] = comp['name']
+                        summary_results.append(summary)
 
-                        val_market_cap = info.get('marketCap')
-                        val_op_margin = info.get('operatingMargins')
-                        val_roe = info.get('returnOnEquity')
-                        val_revenue = info.get('totalRevenue')
-
-                        summary_results.append({
-                            "企業名": comp['name'],
-                            "時価総額(億)": round(val_market_cap / 1e8, 1) if val_market_cap else 0,
-                            "売上高(億)": round(val_revenue / 1e8, 1) if val_revenue else 0,
-                            "営業利益率(%)": round(val_op_margin * 100, 1) if val_op_margin else 0,
-                            "ROE(%)": round(val_roe * 100, 1) if val_roe else 0
-                        })
-
-                        # 2. 5年分（ヒストリカル）データの取得（AI分析用）
-                        hist_pl = stock.financials 
-                        hist_bs = stock.balance_sheet 
-                        
-                        detailed_financials_for_ai += f"\n--- {comp['name']} ({ticker_code}) 過去5年分財務データ ---\n"
-                        detailed_financials_for_ai += "【損益計算書 (主要項目)】\n"
-                        
-                        # 💡 改善点2: データが空の場合の安全対策
-                        if not hist_pl.empty:
-                            detailed_financials_for_ai += hist_pl.loc[hist_pl.index.intersection(['Total Revenue', 'Operating Income', 'Net Income', 'Selling General Administrative'])].to_string()
-                        else:
-                            detailed_financials_for_ai += "データなし\n"
-
-                        detailed_financials_for_ai += "\n【貸借対照表 (主要項目)】\n"
-                        if not hist_bs.empty:
-                            detailed_financials_for_ai += hist_bs.loc[hist_bs.index.intersection(['Total Assets', 'Stockholders Equity', 'Inventory', 'Accounts Receivable', 'Accounts Payable'])].to_string()
-                        else:
-                            detailed_financials_for_ai += "データなし\n"
+                        detailed_financials_for_ai += f"\n--- {comp['name']} ({comp['ticker']}) 過去5年分財務データ ---\n"
+                        detailed_financials_for_ai += hist_text
                         detailed_financials_for_ai += "\n"
 
                     except Exception as e:
-                        # 💡 改善点3: どんなエラーが出たかを記録する
-                        error_targets.append(f"{comp['name']} ({comp['ticker']}) - 詳細: {str(e)}")
+                        error_targets.append(str(e))
                         continue
                 
                 if error_targets:
-                    # エラーの具体的な中身を画面に警告として出す
                     st.warning("一部のデータ取得に制限がありました:\n\n" + "\n\n".join(error_targets))
 
                 if not summary_results:
@@ -179,6 +208,8 @@ if "step" in st.session_state and st.session_state.step >= 2:
                 else:
                     # 最新データの表示（表）
                     df = pd.DataFrame(summary_results)
+                    # 列の並び順調整
+                    df = df[["企業名", "時価総額(億)", "売上高(億)", "営業利益率(%)", "ROE(%)"]]
                     st.subheader("競合の主要財務数値（最新）")
                     st.dataframe(df.style.format(precision=1), use_container_width=True)
             
@@ -197,7 +228,6 @@ if "step" in st.session_state and st.session_state.step >= 2:
                     
                     # 4. BDDレポート生成
                     with st.spinner("📝 市場分析およびバリューアップ仮説を生成中..."):
-                        table_str = df.to_markdown()
                         report_prompt = f"""
                         あなたは、トップティアの戦略コンサルティングファーム出身で、現在は大手PEファンドの投資委員（ICメンバー）です。
                         「{target_name}」のBDD（ビジネス・デューデリジェンス）において、特に「アップサイド・ポテンシャル」と「バリューアップ計画（VCP）」に焦点を当てた投資判断資料を作成してください。
