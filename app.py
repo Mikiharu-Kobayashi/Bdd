@@ -49,7 +49,6 @@ def create_word(target, description, report_text):
 # --- 🌟 yfinanceデータ取得関数（キャッシュ＆Sleep強化版） ---
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_yf_financials(ticker_code):
-    # 【重要】Yahoo FinanceからのIPブロックを防ぐための待機時間
     time.sleep(2)
     
     raw_ticker = str(ticker_code).strip()
@@ -62,7 +61,6 @@ def fetch_yf_financials(ticker_code):
         stock = yf.Ticker(ticker)
         info = stock.info
         
-        # yfinanceは企業が存在しなくても空の辞書を返すことがあるためチェック
         if not info or len(info) < 5:
             raise ValueError(f"Yahoo Financeに {ticker} のデータが存在しません。")
 
@@ -78,13 +76,11 @@ def fetch_yf_financials(ticker_code):
             "ROE(%)": round(val_roe * 100, 1) if val_roe else 0
         }
 
-        # 5年分の財務データ
         hist_pl = stock.financials 
         hist_bs = stock.balance_sheet 
         
         hist_text = "【損益計算書 (主要項目)】\n"
         if hist_pl is not None and not hist_pl.empty:
-            # 存在する項目だけを安全に抽出
             pl_items = [i for i in ['Total Revenue', 'Operating Income', 'Net Income', 'Selling General Administrative'] if i in hist_pl.index]
             hist_text += hist_pl.loc[pl_items].to_string() + "\n"
         else:
@@ -104,20 +100,25 @@ def fetch_yf_financials(ticker_code):
 
 
 # --- 1. 競合特定フェーズ ---
+# 入力された企業名をセッションステートで保持（途中で消えるのを防ぐ）
+target_input_default = st.session_state.get('target_name', "")
+
 with st.form(key='search_form'):
-    target_name = st.text_input("分析したい企業の名前を入力してください", "")
+    target_name_input = st.text_input("分析したい企業の名前を入力してください", target_input_default)
     submit_button = st.form_submit_button(label='分析開始')
 
 if submit_button:
     if not api_key:
         st.error("左上の矢印 >> からサイドバーを開き、Gemini APIキーを入力してください")
-    elif not target_name:
+    elif not target_name_input:
         st.warning("企業名を入力してください")
     else:
+        # 変数を確定して保存
+        st.session_state.target_name = target_name_input
         model = genai.GenerativeModel(selected_model)
-        with st.spinner(f"🔍 {target_name} を調査中..."):
+        with st.spinner(f"🔍 {st.session_state.target_name} を調査中..."):
             comp_prompt = f"""
-            「{target_name}」のBDDを行います。以下をJSON形式のみで出力してください。
+            「{st.session_state.target_name}」のBDDを行います。以下をJSON形式のみで出力してください。
             {{
               'description': '対象企業の概要',
               'competitors': [
@@ -140,11 +141,11 @@ if submit_button:
 
 # --- 2. 競合選択 & 財務分析フェーズ ---
 if "step" in st.session_state and st.session_state.step >= 2:
-    st.subheader(f"対象企業の概要: {target_name}")
+    st.subheader(f"対象企業の概要: {st.session_state.target_name}")
     st.info(st.session_state.target_desc)
 
     st.subheader("分析対象の選択")
-    st.write("AIが特定した競合候補です。分析に含める企業を選択してください。")
+    st.write("AIが特定した競合候補です。ベンチマークとして分析に含める企業を選択してください。")
 
     comp_list = st.session_state.all_competitors
     selected_tickers = []  
@@ -165,26 +166,21 @@ if "step" in st.session_state and st.session_state.step >= 2:
                 detailed_financials_for_ai = ""
                 error_targets = []
                 
-                # プログレスバーを表示してユーザーの体感待ち時間を軽減
                 progress_bar = st.progress(0)
                 total_comps = len(final_competitors)
 
                 for i, comp in enumerate(final_competitors):
                     try:
-                        # yfinance関数呼び出し（キャッシュ＋2秒待機）
                         summary, hist_text = fetch_yf_financials(comp['ticker'])
-                        
                         summary["企業名"] = comp['name']
                         summary_results.append(summary)
 
                         detailed_financials_for_ai += f"\n--- {comp['name']} ({comp['ticker']}) 過去5年分財務データ ---\n"
                         detailed_financials_for_ai += hist_text
                         detailed_financials_for_ai += "\n"
-
                     except Exception as e:
                         error_targets.append(str(e))
                     
-                    # プログレスバーを更新
                     progress_bar.progress((i + 1) / total_comps)
                 
                 if error_targets:
@@ -210,64 +206,41 @@ if "step" in st.session_state and st.session_state.step >= 2:
                     fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"))
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    with st.spinner("📝 市場分析およびバリューアップ仮説を生成中..."):
+                    with st.spinner(f"📝 {st.session_state.target_name} の分析レポートを生成中..."):
+                        # 💡 ここが主語のブレを防ぐための強力なプロンプト改修です
                         report_prompt = f"""
-                        あなたは、トップティアの戦略コンサルティングファーム出身で、現在は大手PEファンドの投資委員（ICメンバー）です。
-                        「{target_name}」のBDD（ビジネス・デューデリジェンス）において、特に「アップサイド・ポテンシャル」と「バリューアップ計画（VCP）」に焦点を当てた投資判断資料を作成してください。
+                        あなたはトップティアの戦略コンサルティングファーム出身で、現在は大手PEファンドの投資委員（ICメンバー）です。
+                        
+                        【最重要ルール】
+                        今回の分析対象（主語）は「{st.session_state.target_name}」です。
+                        提供する財務データは「{st.session_state.target_name}」の【競合他社】のデータです。
+                        レポートの主語を競合他社にすり替えないでください。あくまで競合のデータをベンチマーク（比較対象）として利用し、「{st.session_state.target_name}」のBDD（ビジネス・デューデリジェンス）レポートを作成してください。
 
-                        与えられた財務データ（{detailed_financials_for_ai}）を起点に、一般的な市場解説ではなく、「この会社は、具体的にどのレバーを引けば企業価値（EV）が2倍、3倍になるか？」という視点で、ドライかつ論理的に、そして商品名やECサイト名称、組織名などの固有名詞を用いながら対象会社を具体的に記述してください。
+                        提供された競合データ（{detailed_financials_for_ai}）を起点に、業界の利益構造を推測し、「{st.session_state.target_name}」は具体的にどのレバーを引けば企業価値（EV）が最大化するかを記述してください。
                         アウトプットは章の名から簡潔に始めてください。
-                        内容を深めるため、BDD/ファンドなどの単語を書いていますがOutputには含めず、対象企業の純粋な分析レポートとして様々な用途に対応できるようにしてください。投資判断に限定しないでください。
                         
                         【読みやすさの厳格ルール】
-                        1. 構造化：## で章を、### で節を区切り、情報の階層を明確にすること。
-                        2. 視覚化：重要な数値や結論は **太字** で強調し、3つ以上の項目は必ず箇条書きにすること。ただし、Word出力時にAIライクにならないよう *の多用は避ける
-                        3. 簡潔性：1文を短くし、専門用語には平易な注釈を添えること。
-                        4. 要約：各章の冒頭に「> 結論：(一行要約)」を記述すること。
+                        1. 構造化：## で章を、### で節を区切る
+                        2. 視覚化：重要な数値や結論は **太字** で強調し、3つ以上の項目は必ず箇条書きにする。*の多用は避ける
+                        3. 簡潔性：1文を短くし、専門用語には平易な注釈を添える
+                        4. 要約：各章の冒頭に「> 結論：(一行要約)」を記述する
                         
                         【レポート構成】
                         1. エグゼクティブ・サマリー：
-                           業界全体のファンダメンタルズ/競合優位性/ {target_name}の現状および強みを踏まえた成長戦略。
+                           業界全体のファンダメンタルズを踏まえた、{st.session_state.target_name}の現状と成長戦略。
                            1-1.事業戦略
                            1-2.人事戦略
                            1-3.財務戦略
                         2. 市場分析
-                           2-1.現状
-                               市場規模（TAM/SAM/SOMの推計）
-                               市場の成長率
-                               市場の利益率
-                               競争の激化要因（価格競争か、機能競争か）
-                           2-2.将来性
-                               足元成長を後押ししているトレンド/成長率の高いセグメント（顧客層/価格帯など）の最新トピック
-                               現在および将来のマクロ環境（PEST）が与えるインパクト      
-                        3. 競合分析
-                            3-1.各社の特徴
-                                バリューチェーン
-                                ターゲット顧客/ポジショニング
-                                マーケティング戦略（product/price/place/promotion)
-                            3-2.各社の財務分析
-                                収益性の源泉とコスト構造の解剖
-                                    限界利益率/オペレーティング・レバレッジ（売上増がどれだけ利益増に直結するか）
-                                    利益の質（広告宣伝費や販促費の比率から、ブランド力による「指名買い」なのか「販促による押し込み」なのか）
-                                    ユニットエコノミクス推論（財務数値から、各社の顧客獲得コストやLTVといった事業推進のカギとなる値の推定）
-                                デュポン分析的視点
-                                    ROEを「売上高純利益率 × 総資産回転率 × 財務レバレッジ」の要素に分解し、競合との差を特定
-                                    差を生む構造的要因（コスト構造、アセットライトモデル等）の解剖
-                                CCC (キャッシュ・コンバージョン・サイクル):
-                                    売上債権・棚卸資産の回転期間から、各社の運転資本（Working Capital）の管理能力と、成長に伴う資金需要の強さを推測
-                        4. {target_name}への戦略的提言
-                           {target_name}の情報が少ない場合、公開情報から推計して記載してください。～と仮定します、などは都度書く必要はありません
-                           4-1.マーケットと競合、  {target_name}の公開データから取りうる戦略オプションの洗い出し
-                               トップラインの強化: 新規顧客開拓、価格決定権の行使（値上げ）、新商材展開の余地。
-                               コストの最適化: 競合比較から見える、コスト削減の余地（DXによる販管費削減、サプライチェーン見直し）。
-                           4-2.数年で2-3倍の収益を目指す目線での仮評価
-                                現在の時価総額・マルチプルの高さが、どの指標（売上成長率か、それともROEか）に最も強く相関しているかを特定し
-                                どのようなレバー（出店加速、単価アップ等）を引けば企業価値が最大化するか
-                        5. 事業推進上の致命的リスク（Red Flags）:
-                           最悪のシナリオ（法規制、強力な新規参入、技術的陳腐化）
-                           それに対する具体的な緩和策（Mitigation Plan）
-                    
-                        プロフェッショナルな論調で、具体的数値に基づいた示唆を出してください。
+                           2-1.現状（市場規模推計、成長率、利益率、競争環境）
+                           2-2.将来性（トレンド、マクロ環境インパクト）
+                        3. 競合分析とポジショニング
+                            3-1.各社の特徴（バリューチェーン、ターゲット顧客）
+                            3-2.各社の財務分析（提供されたデータを基にした収益性の源泉、コスト構造、デュポン分析的視点、CCC推測）
+                        4. {st.session_state.target_name}への戦略的提言
+                           4-1.競合比較から見える {st.session_state.target_name} の戦略オプション（トップライン強化、コスト最適化）
+                           4-2.企業価値(EV)最大化に向けたバリューアップ仮説（引くべき具体的なレバー）
+                        5. 事業推進上の致命的リスク（Red Flags）と緩和策
                         """
                         
                         try:
@@ -280,12 +253,12 @@ if "step" in st.session_state and st.session_state.step >= 2:
                             st.markdown("---")
                             try:
                                 desc_text = st.session_state.get('target_desc', '概要なし')
-                                word_data = create_word(target_name, desc_text, report_content)
+                                word_data = create_word(st.session_state.target_name, desc_text, report_content)
                                 
                                 st.download_button(
                                     label="📝 Word形式で保存",
                                     data=word_data,
-                                    file_name=f"Quick_BDD_Report_{target_name}.docx",
+                                    file_name=f"Quick_BDD_Report_{st.session_state.target_name}.docx",
                                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                     key="word_download"
                                 )
