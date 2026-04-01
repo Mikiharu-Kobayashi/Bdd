@@ -1,24 +1,24 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import google.generativeai as genai
+import yfinance as yf
 import pandas as pd
 import plotly.express as px
 import json
 import re
-import requests
 from docx import Document
 import io
 import time
 
 # --- ページ設定 ---
 st.set_page_config(page_title="Quick BDD Analyzer", layout="wide")
-st.title("Quick BDD（単一事業向け - FMP API版）")
+st.title("Quick BDD（単一事業向け - yfinance安定版）")
 
 # --- サイドバー：APIキー設定 ---
 with st.sidebar:
     st.header("Settings")
     
-    st.markdown("### 1. Gemini API Key")
+    st.markdown("### Gemini API Key")
     api_key = st.text_input("Enter Gemini API Key", type="password")
     
     if api_key:
@@ -33,10 +33,6 @@ with st.sidebar:
     else:
         st.info("APIキーを入力すると分析が開始できます")
 
-    st.markdown("### 2. FMP API Key")
-    st.markdown("[FMP公式サイト](https://site.financialmodelingprep.com/developer/docs/dashboard)から取得した無料APIキーを入力してください")
-    fmp_api_key = st.text_input("Enter FMP API Key", type="password")
-
 # --- Word生成用の関数 ---
 def create_word(target, description, report_text):
     doc = Document()
@@ -50,81 +46,61 @@ def create_word(target, description, report_text):
     doc.save(bio)
     return bio.getvalue()
 
-# --- FMP APIから財務データを取得する関数（エラー検知強化版） ---
+# --- 🌟 yfinanceデータ取得関数（キャッシュ＆Sleep強化版） ---
 @st.cache_data(ttl=86400, show_spinner=False)
-def fetch_fmp_financials(ticker_code, fmp_key):
-    # FMPの制限対策（念のため少し待機）
-    time.sleep(0.5)
+def fetch_yf_financials(ticker_code):
+    # 【重要】Yahoo FinanceからのIPブロックを防ぐための待機時間
+    time.sleep(2)
     
-    # 4桁の数字のみの場合は、日本株指定のために.Tを付与する
     raw_ticker = str(ticker_code).strip()
     if re.match(r'^\d{4}$', raw_ticker):
         ticker = f"{raw_ticker}.T"
     else:
         ticker = raw_ticker
 
-    base_url = "https://financialmodelingprep.com/api/v3"
-    params = {"apikey": fmp_key}
-    
     try:
-        # 1. クォート情報（時価総額など）
-        quote_res = requests.get(f"{base_url}/quote/{ticker}", params=params).json()
-        # 2. 損益計算書（過去5年分）
-        is_res = requests.get(f"{base_url}/income-statement/{ticker}", params={"limit": 5, "apikey": fmp_key}).json()
-        # 3. 貸借対照表（過去5年分）
-        bs_res = requests.get(f"{base_url}/balance-sheet-statement/{ticker}", params={"limit": 5, "apikey": fmp_key}).json()
-        # 4. 主要指標（直近のROEなど）
-        metrics_res = requests.get(f"{base_url}/key-metrics-ttm/{ticker}", params=params).json()
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        # yfinanceは企業が存在しなくても空の辞書を返すことがあるためチェック
+        if not info or len(info) < 5:
+            raise ValueError(f"Yahoo Financeに {ticker} のデータが存在しません。")
 
-        # 💡 【改善】FMP APIからのエラーメッセージ（辞書型）をキャッチして例外を投げる
-        if isinstance(quote_res, dict) and "Error Message" in quote_res:
-            raise ValueError(f"APIエラー: {quote_res['Error Message']}")
-        if isinstance(is_res, dict) and "Error Message" in is_res:
-            raise ValueError(f"APIエラー: {is_res['Error Message']}")
+        val_market_cap = info.get('marketCap')
+        val_op_margin = info.get('operatingMargins')
+        val_roe = info.get('returnOnEquity')
+        val_revenue = info.get('totalRevenue')
 
-        # 💡 【改善】空のリストが返ってきた場合（企業が存在しない等）の対応
-        if not quote_res or not is_res:
-            raise ValueError(f"データが空です。ティッカーコードが誤っているか、FMP非対応の可能性があります。")
-
-        latest_is = is_res[0]
-        quote = quote_res[0]
-        metrics = metrics_res[0] if metrics_res else {}
-
-        val_market_cap = quote.get('marketCap', 0)
-        val_revenue = latest_is.get('revenue', 0)
-        val_op_income = latest_is.get('operatingIncome', 0)
-        val_roe = metrics.get('roeTTM', 0)
-
-        # ポジショニングマップ用の最新サマリー
         summary = {
             "時価総額(億)": round(val_market_cap / 1e8, 1) if val_market_cap else 0,
             "売上高(億)": round(val_revenue / 1e8, 1) if val_revenue else 0,
-            "営業利益率(%)": round((val_op_income / val_revenue) * 100, 1) if val_revenue and val_revenue != 0 else 0,
+            "営業利益率(%)": round(val_op_margin * 100, 1) if val_op_margin else 0,
             "ROE(%)": round(val_roe * 100, 1) if val_roe else 0
         }
 
-        # AI分析用の5年分ヒストリカルデータ整形
-        df_is = pd.DataFrame(is_res)
-        df_bs = pd.DataFrame(bs_res)
-
+        # 5年分の財務データ
+        hist_pl = stock.financials 
+        hist_bs = stock.balance_sheet 
+        
         hist_text = "【損益計算書 (主要項目)】\n"
-        if not df_is.empty:
-            is_cols = [c for c in ['date', 'revenue', 'operatingIncome', 'netIncome', 'sellingGeneralAndAdministrativeExpenses'] if c in df_is.columns]
-            hist_text += df_is[is_cols].to_string(index=False) + "\n"
+        if hist_pl is not None and not hist_pl.empty:
+            # 存在する項目だけを安全に抽出
+            pl_items = [i for i in ['Total Revenue', 'Operating Income', 'Net Income', 'Selling General Administrative'] if i in hist_pl.index]
+            hist_text += hist_pl.loc[pl_items].to_string() + "\n"
         else:
             hist_text += "データなし\n"
 
         hist_text += "\n【貸借対照表 (主要項目)】\n"
-        if not df_bs.empty:
-            bs_cols = [c for c in ['date', 'totalAssets', 'totalStockholdersEquity', 'inventory', 'accountReceivables', 'accountPayables'] if c in df_bs.columns]
-            hist_text += df_bs[bs_cols].to_string(index=False) + "\n"
+        if hist_bs is not None and not hist_bs.empty:
+            bs_items = [i for i in ['Total Assets', 'Stockholders Equity', 'Inventory', 'Accounts Receivable', 'Accounts Payable'] if i in hist_bs.index]
+            hist_text += hist_bs.loc[bs_items].to_string() + "\n"
         else:
             hist_text += "データなし\n"
 
         return summary, hist_text
 
     except Exception as e:
-        raise ValueError(f"データ取得エラー ({ticker}): {str(e)}")
+        raise ValueError(f"取得エラー ({ticker}): {str(e)}")
 
 
 # --- 1. 競合特定フェーズ ---
@@ -182,19 +158,21 @@ if "step" in st.session_state and st.session_state.step >= 2:
         
         if not final_competitors:
             st.error("少なくとも1社は選択してください。")
-        elif not fmp_api_key:
-            st.error("左上の矢印 >> からサイドバーを開き、FMP APIキーを入力してください")
         else:
             model = genai.GenerativeModel(selected_model)
-            with st.spinner("📡 FMP APIから5年分の詳細財務データを抽出中..."):
+            with st.spinner("📡 Yahoo Financeから詳細財務データを抽出中（アクセス制限回避のため少し時間がかかります）..."):
                 summary_results = []
                 detailed_financials_for_ai = ""
                 error_targets = []
                 
-                for comp in final_competitors:
+                # プログレスバーを表示してユーザーの体感待ち時間を軽減
+                progress_bar = st.progress(0)
+                total_comps = len(final_competitors)
+
+                for i, comp in enumerate(final_competitors):
                     try:
-                        # FMP関数呼び出し
-                        summary, hist_text = fetch_fmp_financials(comp['ticker'], fmp_api_key)
+                        # yfinance関数呼び出し（キャッシュ＋2秒待機）
+                        summary, hist_text = fetch_yf_financials(comp['ticker'])
                         
                         summary["企業名"] = comp['name']
                         summary_results.append(summary)
@@ -205,7 +183,9 @@ if "step" in st.session_state and st.session_state.step >= 2:
 
                     except Exception as e:
                         error_targets.append(str(e))
-                        continue
+                    
+                    # プログレスバーを更新
+                    progress_bar.progress((i + 1) / total_comps)
                 
                 if error_targets:
                     st.warning("一部のデータ取得に制限がありました:\n\n" + "\n\n".join(error_targets))
@@ -213,14 +193,11 @@ if "step" in st.session_state and st.session_state.step >= 2:
                 if not summary_results:
                     st.error("財務データの取得にすべて失敗しました。")
                 else:
-                    # 最新データの表示（表）
                     df = pd.DataFrame(summary_results)
-                    # 列の並び順調整
                     df = df[["企業名", "時価総額(億)", "売上高(億)", "営業利益率(%)", "ROE(%)"]]
                     st.subheader("競合の主要財務数値（最新）")
                     st.dataframe(df.style.format(precision=1), use_container_width=True)
             
-                    # 最新データのビジュアル化（ポジショニングマップ）
                     st.subheader("競合ポジショニングマップ（最新）")
                     plot_df = df.copy()
                     plot_df["表示サイズ"] = plot_df["時価総額(億)"].apply(lambda x: 0.1 if x <= 0 else x)
@@ -233,7 +210,6 @@ if "step" in st.session_state and st.session_state.step >= 2:
                     fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"))
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # 4. BDDレポート生成
                     with st.spinner("📝 市場分析およびバリューアップ仮説を生成中..."):
                         report_prompt = f"""
                         あなたは、トップティアの戦略コンサルティングファーム出身で、現在は大手PEファンドの投資委員（ICメンバー）です。
@@ -295,21 +271,15 @@ if "step" in st.session_state and st.session_state.step >= 2:
                         """
                         
                         try:
-                            # レポート生成実行
                             report_response = model.generate_content(report_prompt)
                             report_content = report_response.text
                             
-                            # 画面にレポートを表示
                             st.divider()
                             st.markdown(report_content)
                             
-                            # --- Word出力セクション ---
                             st.markdown("---")
                             try:
-                                # session_state から企業概要を取得
                                 desc_text = st.session_state.get('target_desc', '概要なし')
-                                
-                                # Wordファイルの生成
                                 word_data = create_word(target_name, desc_text, report_content)
                                 
                                 st.download_button(
