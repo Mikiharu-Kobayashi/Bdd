@@ -19,6 +19,8 @@ with st.sidebar:
     st.header("Settings")
     
     st.markdown("### Gemini API Key")
+    # 💡 修正点1: Google AI Studioへのリンクを追加
+    st.markdown("🔑 APIキーをお持ちでない方は[Google AI Studio](https://aistudio.google.com/app/apikey)から取得してください。")
     api_key = st.text_input("Enter Gemini API Key", type="password")
     
     if api_key:
@@ -79,14 +81,20 @@ def fetch_yf_financials(ticker_code):
         hist_pl = stock.financials 
         hist_bs = stock.balance_sheet 
         
-        hist_text = "【損益計算書 (主要項目)】\n"
+        # 💡 修正点3: 過去3年分のデータに絞る
+        if hist_pl is not None and not hist_pl.empty:
+            hist_pl = hist_pl.iloc[:, :3]
+        if hist_bs is not None and not hist_bs.empty:
+            hist_bs = hist_bs.iloc[:, :3]
+        
+        hist_text = "【損益計算書 (主要項目) - 過去3年分】\n"
         if hist_pl is not None and not hist_pl.empty:
             pl_items = [i for i in ['Total Revenue', 'Operating Income', 'Net Income', 'Selling General Administrative'] if i in hist_pl.index]
             hist_text += hist_pl.loc[pl_items].to_string() + "\n"
         else:
             hist_text += "データなし\n"
 
-        hist_text += "\n【貸借対照表 (主要項目)】\n"
+        hist_text += "\n【貸借対照表 (主要項目) - 過去3年分】\n"
         if hist_bs is not None and not hist_bs.empty:
             bs_items = [i for i in ['Total Assets', 'Stockholders Equity', 'Inventory', 'Accounts Receivable', 'Accounts Payable'] if i in hist_bs.index]
             hist_text += hist_bs.loc[bs_items].to_string() + "\n"
@@ -100,31 +108,49 @@ def fetch_yf_financials(ticker_code):
 
 
 # --- 1. 競合特定フェーズ ---
-# 入力された企業名をセッションステートで保持（途中で消えるのを防ぐ）
 target_input_default = st.session_state.get('target_name', "")
+manual_comp_default = st.session_state.get('manual_comp', "")
 
 with st.form(key='search_form'):
-    target_name_input = st.text_input("分析したい企業の名前を入力してください", target_input_default)
+    # 💡 修正点2: ターゲットと競合をHPリンクでも指定できるようにUIを変更
+    st.markdown("### 分析対象の設定")
+    target_name_input = st.text_input("分析したい企業の名前（またはHPのURL）を入力してください", target_input_default)
+    
+    st.markdown("### 競合の手動指定（任意）")
+    manual_comp_input = st.text_area("AIの提案を使わず、特定の競合を含めたい場合は企業名やHPリンクを入力してください", manual_comp_default, placeholder="例: https://www.nintendo.co.jp/, ソニーグループ")
+    
     submit_button = st.form_submit_button(label='分析開始')
 
 if submit_button:
     if not api_key:
         st.error("左上の矢印 >> からサイドバーを開き、Gemini APIキーを入力してください")
     elif not target_name_input:
-        st.warning("企業名を入力してください")
+        st.warning("企業名（またはURL）を入力してください")
     else:
-        # 変数を確定して保存
         st.session_state.target_name = target_name_input
+        st.session_state.manual_comp = manual_comp_input
+        
         model = genai.GenerativeModel(selected_model)
         with st.spinner(f"🔍 {st.session_state.target_name} を調査中..."):
+            # 💡 修正点2: プロンプトを手動指定の競合が考慮されるように調整
             comp_prompt = f"""
-            「{st.session_state.target_name}」のBDDを行います。以下をJSON形式のみで出力してください。
-            {{
+            「{st.session_state.target_name}」のBDDを行います。
+            """
+            
+            if st.session_state.manual_comp:
+                comp_prompt += f"""
+            なお、ユーザーから以下の企業（またはHPリンク）が競合として指定されています。これらを優先して競合リストの配列に必ず含め、適切な銘柄コード(Ticker)を特定してください。
+            指定競合: {st.session_state.manual_comp}
+            """
+            
+            comp_prompt += """
+            以下をJSON形式のみで出力してください。
+            {
               'description': '対象企業の概要',
               'competitors': [
-                {{'name': '企業名', 'ticker': '銘柄コード.T', 'reason': '競合となりうる理由(30文字以内)'}}
+                {'name': '企業名', 'ticker': '銘柄コード.T', 'reason': '競合となりうる理由(30文字以内)'}
               ]
-            }}
+            }
             """
             try:
                 res = model.generate_content(comp_prompt)
@@ -145,7 +171,7 @@ if "step" in st.session_state and st.session_state.step >= 2:
     st.info(st.session_state.target_desc)
 
     st.subheader("分析対象の選択")
-    st.write("AIが特定した競合候補です。ベンチマークとして分析に含める企業を選択してください。")
+    st.write("AIが特定した（またはあなたが指定した）競合候補です。ベンチマークとして分析に含める企業を選択してください。")
 
     comp_list = st.session_state.all_competitors
     selected_tickers = []  
@@ -175,7 +201,8 @@ if "step" in st.session_state and st.session_state.step >= 2:
                         summary["企業名"] = comp['name']
                         summary_results.append(summary)
 
-                        detailed_financials_for_ai += f"\n--- {comp['name']} ({comp['ticker']}) 過去5年分財務データ ---\n"
+                        # 💡 修正点3: 過去3年分に変更
+                        detailed_financials_for_ai += f"\n--- {comp['name']} ({comp['ticker']}) 過去3年分財務データ ---\n"
                         detailed_financials_for_ai += hist_text
                         detailed_financials_for_ai += "\n"
                     except Exception as e:
@@ -207,7 +234,6 @@ if "step" in st.session_state and st.session_state.step >= 2:
                     st.plotly_chart(fig, use_container_width=True)
                     
                     with st.spinner(f"📝 {st.session_state.target_name} の分析レポートを生成中..."):
-                        # 💡 ここが主語のブレを防ぐための強力なプロンプト改修です
                         report_prompt = f"""
                         あなたはトップティアの戦略コンサルティングファーム出身で、現在は大手PEファンドの投資委員（ICメンバー）です。
                         
@@ -216,7 +242,7 @@ if "step" in st.session_state and st.session_state.step >= 2:
                         提供する財務データは「{st.session_state.target_name}」の【競合他社】のデータです。
                         レポートの主語を競合他社にすり替えないでください。あくまで競合のデータをベンチマーク（比較対象）として利用し、「{st.session_state.target_name}」のBDD（ビジネス・デューデリジェンス）レポートを作成してください。
 
-                        提供された競合データ（{detailed_financials_for_ai}）を起点に、業界の利益構造を推測し、「{st.session_state.target_name}」は具体的にどのレバーを引けば企業価値（EV）が最大化するかを記述してください。
+                        提供された過去3年分の競合データ（{detailed_financials_for_ai}）を起点に、業界の利益構造を推測し、「{st.session_state.target_name}」は具体的にどのレバーを引けば企業価値（EV）が最大化するかを記述してください。
                         アウトプットは章の名から簡潔に始めてください。
                         
                         【読みやすさの厳格ルール】
@@ -227,19 +253,19 @@ if "step" in st.session_state and st.session_state.step >= 2:
                         
                         【レポート構成】
                         1. エグゼクティブ・サマリー：
-                           業界全体のファンダメンタルズを踏まえた、{st.session_state.target_name}の現状と成長戦略。
-                           1-1.事業戦略
-                           1-2.人事戦略
-                           1-3.財務戦略
+                            業界全体のファンダメンタルズを踏まえた、{st.session_state.target_name}の現状と成長戦略。
+                            1-1.事業戦略
+                            1-2.人事戦略
+                            1-3.財務戦略
                         2. 市場分析
-                           2-1.現状（市場規模推計、成長率、利益率、競争環境）
-                           2-2.将来性（トレンド、マクロ環境インパクト）
+                            2-1.現状（市場規模推計、成長率、利益率、競争環境）
+                            2-2.将来性（トレンド、マクロ環境インパクト）
                         3. 競合分析とポジショニング
                             3-1.各社の特徴（バリューチェーン、ターゲット顧客）
                             3-2.各社の財務分析（提供されたデータを基にした収益性の源泉、コスト構造、デュポン分析的視点、CCC推測）
                         4. {st.session_state.target_name}への戦略的提言
-                           4-1.競合比較から見える {st.session_state.target_name} の戦略オプション（トップライン強化、コスト最適化）
-                           4-2.企業価値(EV)最大化に向けたバリューアップ仮説（引くべき具体的なレバー）
+                            4-1.競合比較から見える {st.session_state.target_name} の戦略オプション（トップライン強化、コスト最適化）
+                            4-2.企業価値(EV)最大化に向けたバリューアップ仮説（引くべき具体的なレバー）
                         5. 事業推進上の致命的リスク（Red Flags）と緩和策
                         """
                         
