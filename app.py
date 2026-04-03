@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import json
 import re
+import ast  # 💡追加: シングルクォーテーションのJSONも読み込めるようにするモジュール
 from docx import Document
 import io
 import time
@@ -140,12 +141,13 @@ if submit_button:
             指定競合: {st.session_state.manual_comp}
             """
             
+            # 💡修正: JSONフォーマットのキーと値をダブルクォーテーション(")に変更
             comp_prompt += """
-            以下をJSON形式のみで出力してください。
+            以下をJSON形式のみで出力してください。必ずキーはダブルクォーテーション(")で囲んでください。
             {
-              'description': '対象企業の概要',
-              'competitors': [
-                {'name': '企業名', 'ticker': '銘柄コード.T', 'reason': '競合となりうる理由(30文字以内)'}
+              "description": "対象企業の概要",
+              "competitors": [
+                {"name": "企業名", "ticker": "銘柄コード.T", "reason": "競合となりうる理由(30文字以内)"}
               ]
             }
             """
@@ -153,7 +155,14 @@ if submit_button:
                 res = model.generate_content(comp_prompt)
                 match = re.search(r'\{.*\}', res.text, re.DOTALL)
                 if match:
-                    data = json.loads(match.group())
+                    json_str = match.group()
+                    try:
+                        # まず標準のjsonで読み込みを試みる
+                        data = json.loads(json_str)
+                    except json.JSONDecodeError:
+                        # 💡追加: もしAIが間違えてシングルクォーテーションで返してきた場合の救済措置
+                        data = ast.literal_eval(json_str)
+                        
                     st.session_state.target_desc = data['description']
                     st.session_state.all_competitors = data['competitors']
                     st.session_state.step = 2
