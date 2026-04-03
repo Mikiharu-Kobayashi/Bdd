@@ -19,7 +19,6 @@ with st.sidebar:
     st.header("Settings")
     
     st.markdown("### Gemini API Key")
-    # 💡 修正点1: Google AI Studioへのリンクを追加
     st.markdown("🔑 APIキーをお持ちでない方は[Google AI Studio](https://aistudio.google.com/app/apikey)から取得してください。")
     api_key = st.text_input("Enter Gemini API Key", type="password")
     
@@ -81,7 +80,7 @@ def fetch_yf_financials(ticker_code):
         hist_pl = stock.financials 
         hist_bs = stock.balance_sheet 
         
-        # 💡 修正点3: 過去3年分のデータに絞る
+        # 過去3年分のデータに絞る
         if hist_pl is not None and not hist_pl.empty:
             hist_pl = hist_pl.iloc[:, :3]
         if hist_bs is not None and not hist_bs.empty:
@@ -112,7 +111,6 @@ target_input_default = st.session_state.get('target_name', "")
 manual_comp_default = st.session_state.get('manual_comp', "")
 
 with st.form(key='search_form'):
-    # 💡 修正点2: ターゲットと競合をHPリンクでも指定できるようにUIを変更
     st.markdown("### 分析対象の設定")
     target_name_input = st.text_input("分析したい企業の名前（またはHPのURL）を入力してください", target_input_default)
     
@@ -132,7 +130,6 @@ if submit_button:
         
         model = genai.GenerativeModel(selected_model)
         with st.spinner(f"🔍 {st.session_state.target_name} を調査中..."):
-            # 💡 修正点2: プロンプトを手動指定の競合が考慮されるように調整
             comp_prompt = f"""
             「{st.session_state.target_name}」のBDDを行います。
             """
@@ -176,9 +173,11 @@ if "step" in st.session_state and st.session_state.step >= 2:
     comp_list = st.session_state.all_competitors
     selected_tickers = []  
     
-    for comp in comp_list:
-        if st.checkbox(f"**{comp['name']}** ({comp['ticker']}) — {comp['reason']}", value=True, key=f"check_{comp['ticker']}"):
-            selected_tickers.append(comp['ticker'])
+    # enumerateを使ってkeyの重複エラーを回避
+    for i, comp in enumerate(comp_list):
+        if st.checkbox(f"**{comp['name']}** ({comp['ticker']}) — {comp['reason']}", value=True, key=f"check_{comp['ticker']}_{i}"):
+            if comp['ticker'] not in selected_tickers:
+                selected_tickers.append(comp['ticker'])
 
     if st.button("選択した企業で詳細分析・レポート生成", key="exec_analysis"):
         final_competitors = [c for c in comp_list if c['ticker'] in selected_tickers]
@@ -201,7 +200,6 @@ if "step" in st.session_state and st.session_state.step >= 2:
                         summary["企業名"] = comp['name']
                         summary_results.append(summary)
 
-                        # 💡 修正点3: 過去3年分に変更
                         detailed_financials_for_ai += f"\n--- {comp['name']} ({comp['ticker']}) 過去3年分財務データ ---\n"
                         detailed_financials_for_ai += hist_text
                         detailed_financials_for_ai += "\n"
